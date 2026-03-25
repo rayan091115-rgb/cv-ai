@@ -1,3 +1,4 @@
+// app/api/ai/job-match/route.ts
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { PROMPTS } from '@/lib/prompts-builder'
 import { NextRequest, NextResponse } from 'next/server'
@@ -11,26 +12,25 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { jobOffer, cv } = body as { jobOffer: string; cv?: CVProfile }
 
-    if (!jobOffer) {
+    if (!jobOffer?.trim())
       return NextResponse.json({ error: 'Offre manquante' }, { status: 400 })
-    }
 
-    const prompt = PROMPTS.adaptToJobOffer(cv || {} as CVProfile, jobOffer)
+    const safeCV: CVProfile = cv ?? {
+      id: '', title: '', mode: 'recruiter', templateId: 'classic', accentColor: '#2563EB',
+      personal: { firstName: '', lastName: '', targetRole: '', email: '', phone: '', city: '' },
+      summary: '', experiences: [], education: [], skills: [], languages: [], interests: [],
+      createdAt: 0, updatedAt: 0,
+    }
 
     const model = genAI.getGenerativeModel({
       model: MODEL,
       generationConfig: { responseMimeType: 'application/json' },
     })
-
-    const result = await model.generateContent(prompt)
+    const result = await model.generateContent(PROMPTS.adaptToJobOffer(safeCV, jobOffer))
     const data = JSON.parse(result.response.text())
-
     return NextResponse.json(data)
   } catch (error) {
     console.error('Job match error:', error)
-    return NextResponse.json(
-      { error: "Erreur lors de l'analyse de l'offre." },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "Erreur lors de l'analyse de l'offre." }, { status: 500 })
   }
 }

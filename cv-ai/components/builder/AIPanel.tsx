@@ -2,20 +2,31 @@
 
 import { useState } from 'react'
 import { useCVStore } from '@/lib/cv-store'
+import { showToast } from '@/lib/toast'
 import { motion } from 'framer-motion'
 import { X, FileText, Briefcase, Search, Bot, BarChart3, Sparkles, Target, Sliders } from 'lucide-react'
 
 type Tab = 'actions' | 'jobmatch' | 'optimize'
 
+interface JobMatchResult {
+  match_score_before: number
+  match_score_after: number
+  keywords_missing: string[]
+  adapted_summary?: string
+  adapted_bullets?: Array<{ exp_index: number; bullet_index: number; improved: string }>
+}
+
 const AIPanel = () => {
   const toggleAIPanel = useCVStore((s) => s.toggleAIPanel)
+  const cv = useCVStore((s) => s.cv)
   const updateSummary = useCVStore((s) => s.updateSummary)
+  const updateExperienceBullet = useCVStore((s) => s.updateExperienceBullet)
   const [activeTab, setActiveTab] = useState<Tab>('actions')
   const [jobOffer, setJobOffer] = useState('')
   const [optimLevel, setOptimLevel] = useState<'conservative' | 'improved' | 'aggressive'>('improved')
   const [streamResult, setStreamResult] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [matchResult, setMatchResult] = useState<Record<string, unknown> | null>(null)
+  const [matchResult, setMatchResult] = useState<JobMatchResult | null>(null)
 
   const handleAction = async (action: string, extraBody?: Record<string, unknown>) => {
     setIsLoading(true)
@@ -24,7 +35,7 @@ const AIPanel = () => {
       const res = await fetch('/api/ai/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, ...extraBody }),
+        body: JSON.stringify({ action, cv, ...extraBody }),
       })
       if (!res.ok) throw new Error()
       const contentType = res.headers.get('content-type')
@@ -53,8 +64,33 @@ const AIPanel = () => {
 
   const handleGenerateSummary = async () => {
     const result = await handleAction('generateSummary')
-    if (typeof result === 'string' && result) {
-      updateSummary(result)
+    if (typeof result === 'string' && result.trim()) {
+      updateSummary(result.trim())
+      showToast('Accroche générée et appliquée ✓', 'success')
+    }
+  }
+
+  const handleOptimizeCV = async () => {
+    setIsLoading(true)
+    try {
+      const res = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'optimizeCV', cv, level: optimLevel }),
+      })
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      if (data.optimized && Array.isArray(data.optimized)) {
+        data.optimized.forEach(({ exp_index, bullet_index, text }: { exp_index: number; bullet_index: number; text: string }) => {
+          const exp = cv.experiences[exp_index]
+          if (exp) updateExperienceBullet(exp.id, bullet_index, text)
+        })
+        showToast(`${data.optimized.length} bullets optimisés ✓`, 'success')
+      }
+    } catch {
+      showToast('Erreur lors de l\'optimisation', 'error')
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -65,17 +101,32 @@ const AIPanel = () => {
       const res = await fetch('/api/ai/job-match', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobOffer }),
+        body: JSON.stringify({ jobOffer, cv }),
       })
       if (res.ok) {
         const data = await res.json()
         setMatchResult(data)
+      } else {
+        showToast('Erreur lors de l\'analyse', 'error')
       }
     } catch {
-      setStreamResult('Erreur lors de l\'analyse.')
+      showToast('Erreur réseau', 'error')
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const applyJobMatchResults = () => {
+    if (!matchResult) return
+    if (matchResult.adapted_summary) {
+      updateSummary(matchResult.adapted_summary)
+    }
+    matchResult.adapted_bullets?.forEach(({ exp_index, bullet_index, improved }) => {
+      const exp = cv.experiences[exp_index]
+      if (exp) updateExperienceBullet(exp.id, bullet_index, improved)
+    })
+    showToast('CV adapté à l\'offre ✓', 'success')
+    setMatchResult(null)
   }
 
   const tabs = [
@@ -173,29 +224,37 @@ const AIPanel = () => {
                 <div className="flex items-center gap-3">
                   <div className="text-center">
                     <div className="text-2xl font-bold text-gray-900">
-                      {(matchResult as Record<string, number>).match_score_before || 0}%
+                      {matchResult.match_score_before || 0}%
                     </div>
                     <div className="text-[10px] text-gray-500">Avant</div>
                   </div>
                   <div className="text-gray-300">→</div>
                   <div className="text-center">
                     <div className="text-2xl font-bold text-success">
-                      {(matchResult as Record<string, number>).match_score_after || 0}%
+                      {matchResult.match_score_after || 0}%
                     </div>
                     <div className="text-[10px] text-gray-500">Après</div>
                   </div>
                 </div>
-                {(matchResult as Record<string, string[]>).keywords_missing?.length > 0 && (
+                {matchResult.keywords_missing?.length > 0 && (
                   <div>
                     <span className="text-xs font-medium text-gray-600">Mots-clés manquants :</span>
                     <div className="flex flex-wrap gap-1 mt-1">
-                      {((matchResult as Record<string, string[]>).keywords_missing || []).map((kw: string, i: number) => (
+                      {matchResult.keywords_missing.map((kw: string, i: number) => (
                         <span key={i} className="px-2 py-0.5 text-[10px] bg-red-50 text-danger rounded-full">
                           {kw}
                         </span>
                       ))}
                     </div>
                   </div>
+                )}
+                {matchResult.adapted_summary && (
+                  <button
+                    onClick={applyJobMatchResults}
+                    className="w-full py-2 text-sm font-medium text-white bg-blue rounded-[6px] hover:bg-blue-dark"
+                  >
+                    ✓ Appliquer les modifications au CV
+                  </button>
                 )}
               </div>
             )}
@@ -230,7 +289,7 @@ const AIPanel = () => {
               </p>
             </div>
             <button
-              onClick={() => handleAction('optimizeCV', { level: optimLevel })}
+              onClick={handleOptimizeCV}
               disabled={isLoading}
               className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium text-white bg-blue rounded-[6px] hover:bg-blue-dark disabled:opacity-50"
             >
@@ -243,10 +302,37 @@ const AIPanel = () => {
         {/* Stream result area */}
         {streamResult && (
           <div className="mt-4 p-3 bg-gray-50 rounded-[10px] border border-gray-200">
-            <pre className="text-xs text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">
-              {streamResult}
-              {isLoading && <span className="inline-block w-1.5 h-3.5 bg-blue ml-0.5 animate-pulse" />}
-            </pre>
+            {(() => {
+              try {
+                const report = JSON.parse(streamResult)
+                if (report.score !== undefined) {
+                  return (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl font-bold" style={{color: report.score >= 75 ? '#10B981' : report.score >= 50 ? '#F59E0B' : '#EF4444'}}>
+                          {report.score}/100
+                        </span>
+                        <span className="text-xs text-gray-500">Score ATS</span>
+                      </div>
+                      {report.quick_wins?.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-700 mb-1">Actions prioritaires :</p>
+                          {report.quick_wins.map((win: string, i: number) => (
+                            <p key={i} className="text-xs text-gray-600 pl-2">→ {win}</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                }
+              } catch {}
+              return (
+                <pre className="text-xs text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">
+                  {streamResult}
+                  {isLoading && <span className="inline-block w-1.5 h-3.5 bg-blue ml-0.5 animate-pulse" />}
+                </pre>
+              )
+            })()}
           </div>
         )}
       </div>

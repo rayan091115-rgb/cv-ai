@@ -1,12 +1,14 @@
 'use client'
 
 import { useCVStore } from '@/lib/cv-store'
+import { showToast } from '@/lib/toast'
 import { Heart, X, Sparkles } from 'lucide-react'
 import SectionBlock from '../SectionBlock'
 import { useState } from 'react'
 
 const InterestsSection = () => {
-  const interests = useCVStore((s) => s.cv.interests)
+  const cv = useCVStore((s) => s.cv)
+  const interests = cv.interests
   const updateInterests = useCVStore((s) => s.updateInterests)
   const [input, setInput] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
@@ -37,14 +39,16 @@ const InterestsSection = () => {
       const res = await fetch('/api/ai/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'suggestInterests' }),
+        body: JSON.stringify({ action: 'suggestInterests', cv }),
       })
       if (res.ok) {
         const data = await res.json()
         setSuggestions((data.suggestions || []).filter((s: string) => !interests.includes(s)))
+      } else {
+        showToast('Erreur lors de la suggestion', 'error')
       }
     } catch {
-      // silently fail
+      showToast('Erreur réseau', 'error')
     } finally {
       setLoading(false)
     }

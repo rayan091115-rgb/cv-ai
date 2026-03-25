@@ -3,25 +3,12 @@ import type { CVProfile } from '@/types/cv'
 
 function cvToPlainText(cv: CVProfile): string {
   const lines: string[] = []
-
-  lines.push(`${cv.personal.firstName} ${cv.personal.lastName}`)
+  lines.push(`${cv.personal.firstName} ${cv.personal.lastName}`.trim())
   if (cv.personal.targetRole) lines.push(cv.personal.targetRole)
   lines.push('')
-
-  const contacts: string[] = []
-  if (cv.personal.email) contacts.push(cv.personal.email)
-  if (cv.personal.phone) contacts.push(cv.personal.phone)
-  if (cv.personal.city) contacts.push(cv.personal.city)
-  if (cv.personal.linkedin) contacts.push(cv.personal.linkedin)
-  if (cv.personal.github) contacts.push(cv.personal.github)
+  const contacts = [cv.personal.email, cv.personal.phone, cv.personal.city, cv.personal.linkedin].filter(Boolean)
   if (contacts.length) { lines.push(contacts.join(' | ')); lines.push('') }
-
-  if (cv.summary) {
-    lines.push('PROFIL')
-    lines.push(cv.summary)
-    lines.push('')
-  }
-
+  if (cv.summary) { lines.push('PROFIL'); lines.push(cv.summary); lines.push('') }
   if (cv.experiences.length > 0) {
     lines.push('EXPÉRIENCES PROFESSIONNELLES')
     cv.experiences.forEach((exp) => {
@@ -31,41 +18,29 @@ function cvToPlainText(cv: CVProfile): string {
       lines.push('')
     })
   }
-
   if (cv.education.length > 0) {
     lines.push('FORMATION')
     cv.education.forEach((edu) => {
       lines.push(`${edu.degree}${edu.school ? ` – ${edu.school}` : ''} (${edu.year})`)
-      if (edu.details) lines.push(`  ${edu.details}`)
       lines.push('')
     })
   }
-
-  if (cv.skills.length > 0) {
-    lines.push('COMPÉTENCES')
-    lines.push(cv.skills.join(' • '))
-    lines.push('')
-  }
-
+  if (cv.skills.length > 0) { lines.push('COMPÉTENCES'); lines.push(cv.skills.join(' • ')); lines.push('') }
   if (cv.languages.length > 0) {
     lines.push('LANGUES')
     cv.languages.forEach((l) => lines.push(`${l.language} – ${l.level}`))
     lines.push('')
   }
-
-  if (cv.interests.length > 0) {
-    lines.push("CENTRES D'INTÉRÊT")
-    lines.push(cv.interests.join(' • '))
-  }
-
+  if (cv.interests.length > 0) { lines.push("CENTRES D'INTÉRÊT"); lines.push(cv.interests.join(' • ')) }
   return lines.join('\n')
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { cv, format } = body as { cv: CVProfile; format: 'pdf' | 'docx' | 'txt' }
+    const { cv, format } = body as { cv: CVProfile; format: 'txt' | 'print-trigger' }
 
+    // TXT export (real)
     if (format === 'txt') {
       const text = cvToPlainText(cv)
       return new Response(text, {
@@ -76,32 +51,9 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    if (format === 'pdf') {
-      // For PDF, we return the text content as a simple formatted response
-      // In production, you would use @react-pdf/renderer on the server
-      const text = cvToPlainText(cv)
-      return new Response(text, {
-        headers: {
-          'Content-Type': 'text/plain; charset=utf-8',
-          'Content-Disposition': `attachment; filename="${cv.title || 'CV'}.txt"`,
-        },
-      })
-    }
-
-    if (format === 'docx') {
-      // Simple text export for DOCX — in production use the `docx` library
-      const text = cvToPlainText(cv)
-      return new Response(text, {
-        headers: {
-          'Content-Type': 'text/plain; charset=utf-8',
-          'Content-Disposition': `attachment; filename="${cv.title || 'CV'}.txt"`,
-        },
-      })
-    }
-
-    return NextResponse.json({ error: 'Format non supporté' }, { status: 400 })
-  } catch (error) {
-    console.error('Export error:', error)
+    // Pour PDF et DOCX, retourner un signal pour déclencher window.print() côté client
+    return NextResponse.json({ action: 'print', message: 'Utilisez le bouton Imprimer' })
+  } catch {
     return NextResponse.json({ error: "Erreur lors de l'export." }, { status: 500 })
   }
 }

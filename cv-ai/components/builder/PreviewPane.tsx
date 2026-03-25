@@ -42,17 +42,28 @@ const PreviewPane = () => {
       className={`flex flex-col h-full bg-gray-100 ${isFullscreen ? 'fixed inset-0 z-40' : ''}`}
     >
       {/* Preview canvas */}
-      <div className="flex-1 overflow-auto p-8 flex justify-center">
+      <div
+        className="flex-1 overflow-auto p-8 flex justify-center items-start"
+        style={{ minHeight: 0 }}
+      >
         <div
-          className="cv-document"
           style={{
-            transform: `scale(${zoom})`,
-            transformOrigin: 'top center',
-            width: '210mm',
-            minHeight: '297mm',
+            width: `calc(210mm * ${zoom})`,
+            height: `calc(297mm * ${zoom})`,
+            flexShrink: 0,
           }}
         >
-          <ActiveTemplate isPreview={false} />
+          <div
+            className="cv-document"
+            style={{
+              transform: `scale(${zoom})`,
+              transformOrigin: 'top left',
+              width: '210mm',
+              minHeight: '297mm',
+            }}
+          >
+            <ActiveTemplate isPreview={false} />
+          </div>
         </div>
       </div>
 

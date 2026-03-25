@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useCVStore } from '@/lib/cv-store'
+import { showToast } from '@/lib/toast'
 import { calculateATSScore } from '@/lib/ats-score'
 import {
   Undo2,
@@ -26,8 +27,10 @@ const DocumentToolbar = () => {
   const updateTitle = useCVStore((s) => s.updateTitle)
   const undo = useCVStore((s) => s.undo)
   const redo = useCVStore((s) => s.redo)
-  const canUndo = useCVStore((s) => s.canUndo)
-  const canRedo = useCVStore((s) => s.canRedo)
+  const historyIndex = useCVStore((s) => s.historyIndex)
+  const historyLength = useCVStore((s) => s.history.length)
+  const canUndoVal = historyIndex > 0
+  const canRedoVal = historyIndex < historyLength - 1
   const accentColor = useCVStore((s) => s.accentColor)
   const setAccentColor = useCVStore((s) => s.setAccentColor)
   const toggleAIPanel = useCVStore((s) => s.toggleAIPanel)
@@ -39,11 +42,6 @@ const DocumentToolbar = () => {
   const [showColors, setShowColors] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [isFullPreview, setIsFullPreview] = useState(false)
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
 
   const templateRef = useRef<HTMLDivElement>(null)
   const colorRef = useRef<HTMLDivElement>(null)
@@ -74,22 +72,34 @@ const DocumentToolbar = () => {
 
   const handleExport = async (format: 'pdf' | 'docx' | 'txt') => {
     setShowExport(false)
+    
+    if (format === 'pdf') {
+      window.print()
+      return
+    }
+
+    if (format === 'docx') {
+      showToast('Export DOCX bientôt disponible. Utilisez PDF pour l\'instant.', 'info')
+      return
+    }
+
     try {
       const res = await fetch('/api/export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cv, format, template: activeTemplate }),
+        body: JSON.stringify({ cv, format }),
       })
       if (!res.ok) throw new Error('Export failed')
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${cv.title || 'CV'}.${format}`
+      a.download = `${cv.title || 'CV'}.txt` 
       a.click()
       URL.revokeObjectURL(url)
+      showToast('Export TXT réussi', 'success')
     } catch {
-      alert('Erreur lors de l\'export. Veuillez réessayer.')
+      showToast('Erreur lors de l\'export', 'error')
     }
   }
 
@@ -124,7 +134,7 @@ const DocumentToolbar = () => {
       <div className="flex items-center gap-1">
         <button
           onClick={undo}
-          suppressHydrationWarning
+          disabled={!canUndoVal}
           className="p-2 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
           title="Annuler"
         >
@@ -132,7 +142,7 @@ const DocumentToolbar = () => {
         </button>
         <button
           onClick={redo}
-          suppressHydrationWarning
+          disabled={!canRedoVal}
           className="p-2 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
           title="Rétablir"
         >
